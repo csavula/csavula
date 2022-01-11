@@ -1,0 +1,222 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "State: Template will be used for creation of load balancer and EC2 instance.",
+    "Metadata": {
+      "AWS::CloudFormation::Interface": {
+        "ParameterGroups": [
+          {
+            "Label": {
+              "default": "Parent Stacks"
+            },
+            "Parameters": [
+              "ParentVPCStack",
+              "ParentSGStack",
+              "ParentAlertStack"
+            ]
+          },
+          {
+            "Label": {
+              "default": "Parameters"
+            },
+            "Parameters": [
+              "ImageId",
+              "InstanceType"
+            ]
+          }
+        ]
+      }
+    },
+    "Parameters": {
+      "ParentVPCStack": {
+        "Description": "Stack name of parent VPC stack.",
+        "Type": "String"
+      },
+      "ParentSGStack": {
+        "Description": "Stack name of parent SecurityGroup stack.",
+        "Type": "String"
+      },
+      "ParentAlertStack": {
+        "Description": "Optional but recommended to receive notifications.",
+        "Type": "String",
+        "Default": ""
+      },
+      "ImageId": {
+        "Description": "AMI ID of the LINUX",
+        "Type": "String",
+        "Default": "ami-0ed9277fb7eb570c9"
+      },
+      "InstanceType": {
+        "Description": "Size of the instance to launch",
+        "Type": "String",
+        "Default": "m5.large",
+        "AllowedValues": [
+          "m5.12xlarge",
+          "m5.16xlarge",
+          "m5.24xlarge",
+          "m5.2xlarge",
+          "m5.4xlarge",
+          "m5.8xlarge",
+          "m5.large",
+          "m5.metal",
+          "m5.xlarge",
+          "m5a.12xlarge"
+        ]
+      }
+    },
+    "Resources": {
+      "MyInstance": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+          "ImageId": "ImageId",
+          "InstanceType": "InstanceType",
+          "SecurityGroupIds": [
+            {
+              "Fn::ImportValue": "${ParentSGStack}-DevSecurityGroup"
+            }
+          ],
+          "SubnetId": {
+            "Fn::ImportValue": "${ParentVPCStack}-Public-Subnet-VPC02"
+          }
+        }
+      },
+      "RulesLoadBalancer": {
+        "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+        "Properties": {
+          "LoadBalancerName": "DevRulesLoadbalancer",
+          "Instances": [
+            "MyInstance"
+          ],
+          "Scheme": "internet-facing",
+          "Subnets": [
+            {
+              "Fn::ImportValue": "${ParentVPCStack}-Public-Subnet-VPC02"
+            }
+          ],
+          "Listeners": [
+            {
+              "LoadBalancerPort": "80",
+              "InstancePort": "80",
+              "Protocol": "HTTP"
+            }
+          ],
+          "HealthCheck": {
+            "Target": "HTTP:80/",
+            "HealthyThreshold": "3",
+            "UnhealthyThreshold": "5",
+            "Interval": "30",
+            "Timeout": "5"
+          }
+        }
+      },
+      "CPUAlarm": {
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmDescription": "CPU alarm for my Rules dev EC2 instance",
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "MetricName": "CPUUtilization",
+          "Namespace": "AWS/EC2",
+          "Statistic": "Average",
+          "Period": "60",
+          "EvaluationPeriods": "3",
+          "Threshold": "80",
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "Rules Dev",
+              "Value": "MyInstance"
+            }
+          ]
+        }
+      },
+      "StatusCheckFailed": {
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmDescription": "Trigger a alert when EC2 instance status check fails.",
+          "Namespace": "AWS/EC2",
+          "MetricName": "StatusCheckFailed",
+          "Statistic": "Minimum",
+          "Period": "60",
+          "EvaluationPeriods": "5",
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Threshold": "0",
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Dimensions": [
+            {
+              "Name": "MyInstance",
+              "Value": {
+                "Ref": "MyInstance"
+              }
+            }
+          ]
+        }
+      },
+      "HTTPCodeELB5XXCountTooHighAlarm": {
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmDescription": "Number of 5XX responses from Load balancer over last five minutes too high.",
+          "Namespace": "AWS/ELB",
+          "MetricName": "HTTPCode_ELB_5XX",
+          "Dimensions": [
+            {
+              "Name": "LoadBalancer",
+              "Value": "RulesLoadBalancer"
+            }
+          ],
+          "Threshold": 50,
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Statistic": "Sum",
+          "Period": 60,
+          "EvaluationPeriods": 5,
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "TreatMissingData": "notBreaching"
+        }
+      },
+      "UnhealthyHostCountAlarm": {
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmDescription": "Unhealthy Host Count of the load balancer",
+          "Namespace": "AWS/ELB",
+          "MetricName": "UnHealthyHostCount",
+          "Dimensions": [
+            {
+              "Name": "LoadBalancer",
+              "Value": "RulesLoadBalancer"
+            }
+          ],
+          "Threshold": 1,
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Statistic": "Minimum",
+          "Period": 60,
+          "EvaluationPeriods": 5,
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "TreatMissingData": "notBreaching"
+        }
+      }
+    }
+  }
