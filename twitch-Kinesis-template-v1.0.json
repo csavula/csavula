@@ -1,0 +1,1080 @@
+{
+  "Description": "AWS Streaming Data Solution for Twitch with Amazon Kinesis. Version v1.0",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Amazon Kinesis Data Streams configuration"
+          },
+          "Parameters": [
+            "ShardCount",
+            "RetentionHours",
+            "EnableEnhancedMonitoring"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Amazon Kinesis Data Firehose configuration"
+          },
+          "Parameters": [
+            "BufferingSize",
+            "BufferingInterval",
+            "CompressionFormat",
+            "DataPrefix",
+            "ErrorsPrefix"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Dynamic partitioning configuration"
+          },
+          "Parameters": [
+            "DynamicPartitioning",
+            "NewLineDelimiter",
+            "JqExpression",
+            "RetryDurationSec"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Amazon Kinesis Data Analytics configuration"
+          },
+          "Parameters": [
+            "LogLevel"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "ShardCount": {
+          "default": "Number of open shards"
+        },
+        "RetentionHours": {
+          "default": "Data retention period (hours)"
+        },
+        "EnableEnhancedMonitoring": {
+          "default": "Enable enhanced (shard-level) metrics"
+        },
+        "BufferingSize": {
+          "default": "Size of the buffer (in MBs) that incoming data is buffered before delivery (if dynamic partitioning is enabled, this value must be between 64 MiB and 128 MiB)"
+        },
+        "BufferingInterval": {
+          "default": "Length of time (in seconds) that incoming data is buffered before delivery"
+        },
+        "CompressionFormat": {
+          "default": "Compression format for delivered data in Amazon S3"
+        },
+        "DataPrefix": {
+          "default": "Prefix to be appended to the data delivered to Amazon S3 (if dynamic partitioning is enabled, you can specify the \"partitionKeyFromQuery\" namespace as well)"
+        },
+        "ErrorsPrefix": {
+          "default": "Prefix to be used for errors when delivering data (if dynamic partitioning is enabled, this parameter is required)"
+        },
+        "DynamicPartitioning": {
+          "default": "Whether data on Amazon S3 will be partitioned (once enabled, dynamic partitioning cannot be disabled)"
+        },
+        "NewLineDelimiter": {
+          "default": "Whether to add a new line delimiter between records"
+        },
+        "JqExpression": {
+          "default": "JQ expression (for example, \"{ ticker: .ticker }\")"
+        },
+        "RetryDurationSec": {
+          "default": "Total amount of time (in seconds) that should be spent on retries"
+        },
+        "LogLevel": {
+          "default": "Verbosity of the CloudWatch Logs for the studio"
+        }
+      }
+    }
+  },
+  "Parameters": {
+    "ShardCount": {
+      "Type": "Number",
+      "Default": 2,
+      "MaxValue": 200,
+      "MinValue": 1
+    },
+    "RetentionHours": {
+      "Type": "Number",
+      "Default": 24,
+      "MaxValue": 8760,
+      "MinValue": 24
+    },
+    "EnableEnhancedMonitoring": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "true",
+        "false"
+      ]
+    },
+    "BufferingSize": {
+      "Type": "Number",
+      "Default": 5,
+      "MaxValue": 128,
+      "MinValue": 1
+    },
+    "BufferingInterval": {
+      "Type": "Number",
+      "Default": 300,
+      "MaxValue": 900,
+      "MinValue": 60
+    },
+    "CompressionFormat": {
+      "Type": "String",
+      "Default": "GZIP",
+      "AllowedValues": [
+        "GZIP",
+        "HADOOP_SNAPPY",
+        "Snappy",
+        "UNCOMPRESSED",
+        "ZIP"
+      ]
+    },
+    "DataPrefix": {
+      "Type": "String",
+      "Default": "data/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/",
+      "MaxLength": 1024,
+      "MinLength": 0
+    },
+    "ErrorsPrefix": {
+      "Type": "String",
+      "Default": "errors/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/!{firehose:error-output-type}",
+      "MaxLength": 1024,
+      "MinLength": 0
+    },
+    "DynamicPartitioning": {
+      "Type": "String",
+      "Default": "Disabled",
+      "AllowedValues": [
+        "Enabled",
+        "Disabled"
+      ]
+    },
+    "NewLineDelimiter": {
+      "Type": "String",
+      "Default": "Disabled",
+      "AllowedValues": [
+        "Enabled",
+        "Disabled"
+      ]
+    },
+    "JqExpression": {
+      "Type": "String",
+      "MaxLength": 4096
+    },
+    "RetryDurationSec": {
+      "Type": "Number",
+      "Default": 300,
+      "MaxValue": 7200,
+      "MinValue": 0
+    },
+    "LogLevel": {
+      "Type": "String",
+      "Default": "INFO",
+      "AllowedValues": [
+        "DEBUG",
+        "ERROR",
+        "INFO",
+        "WARN"
+      ]
+    }
+  },
+  "Resources": {
+    "KdsDataStream4BCE778D": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "ShardCount": {
+          "Ref": "ShardCount"
+        },
+        "RetentionPeriodHours": {
+          "Ref": "RetentionHours"
+        },
+        "StreamEncryption": {
+          "EncryptionType": "KMS",
+          "KeyId": "alias/aws/kinesis"
+        }
+      }
+    },
+	"KdfRole24613677": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "firehose.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "kinesis:DescribeStream",
+                    "kinesis:DescribeStreamSummary",
+                    "kinesis:GetShardIterator",
+                    "kinesis:GetRecords",
+                    "kinesis:ListShards",
+                    "kinesis:SubscribeToShard"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "KdsDataStream4BCE778D",
+                      "Arn"
+                    ]
+                  }
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "ReadSource"
+          }
+        ]
+      }
+    },
+	"KdfRoleDefaultPolicy73B7B628": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:DeleteObject*",
+                "s3:PutObject*",
+                "s3:Abort*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "KdfOutputBucket89D2E122",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "KdfOutputBucket89D2E122",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "KdfRoleDefaultPolicy73B7B628",
+        "Roles": [
+          {
+            "Ref": "KdfRole24613677"
+          }
+        ]
+      }
+    },
+	"KdfOutputAccessLogsBucket0DF29BDA": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "AccessControl": "LogDeliveryWrite",
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain"
+    },
+	"KdfOutputBucket89D2E122": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 7
+              },
+              "Id": "multipart-upload-rule",
+              "Status": "Enabled"
+            },
+            {
+              "Id": "intelligent-tiering-rule",
+              "Status": "Enabled",
+              "Transitions": [
+                {
+                  "StorageClass": "INTELLIGENT_TIERING",
+                  "TransitionInDays": 1
+                }
+              ]
+            }
+          ]
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "KdfOutputAccessLogsBucket0DF29BDA"
+          }
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        }
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain"
+    },
+	"KdfOutputBucketPolicy7BEE57FF": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "KdfOutputBucket89D2E122"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "KdfOutputBucket89D2E122",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::GetAtt": [
+                    "KdfOutputBucket89D2E122",
+                    "Arn"
+                  ]
+                }
+              ],
+              "Sid": "HttpsOnly"
+            }
+          ],
+          "Version": "2012-10-17"
+        }
+      }
+    },
+	"KdfDeliveryStreamWithoutDP7F328E8D": {
+      "Type": "AWS::KinesisFirehose::DeliveryStream",
+      "Properties": {
+        "DeliveryStreamType": "KinesisStreamAsSource",
+        "ExtendedS3DestinationConfiguration": {
+          "BucketARN": {
+            "Fn::GetAtt": [
+              "KdfOutputBucket89D2E122",
+              "Arn"
+            ]
+          },
+          "BufferingHints": {
+            "IntervalInSeconds": {
+              "Ref": "BufferingInterval"
+            },
+            "SizeInMBs": {
+              "Ref": "BufferingSize"
+            }
+          },
+          "CompressionFormat": {
+            "Ref": "CompressionFormat"
+          },
+          "ErrorOutputPrefix": {
+            "Ref": "ErrorsPrefix"
+          },
+          "Prefix": {
+            "Ref": "DataPrefix"
+          },
+          "RoleARN": {
+            "Fn::GetAtt": [
+              "KdfRole24613677",
+              "Arn"
+            ]
+          }
+        },
+        "KinesisStreamSourceConfiguration": {
+          "KinesisStreamARN": {
+            "Fn::GetAtt": [
+              "KdsDataStream4BCE778D",
+              "Arn"
+            ]
+          },
+          "RoleARN": {
+            "Fn::GetAtt": [
+              "KdfRole24613677",
+              "Arn"
+            ]
+          }
+        }
+      },
+      "Condition": "KdfDynamicPartitioningDisabledA489FB59"
+    },
+	"KdfDeliveryStreamWithDPFB4C9017": {
+      "Type": "AWS::KinesisFirehose::DeliveryStream",
+      "Properties": {
+        "DeliveryStreamType": "KinesisStreamAsSource",
+        "ExtendedS3DestinationConfiguration": {
+          "BucketARN": {
+            "Fn::GetAtt": [
+              "KdfOutputBucket89D2E122",
+              "Arn"
+            ]
+          },
+          "BufferingHints": {
+            "IntervalInSeconds": {
+              "Ref": "BufferingInterval"
+            },
+            "SizeInMBs": {
+              "Ref": "BufferingSize"
+            }
+          },
+          "CompressionFormat": {
+            "Ref": "CompressionFormat"
+          },
+          "DynamicPartitioningConfiguration": {
+            "Enabled": true,
+            "RetryOptions": {
+              "DurationInSeconds": {
+                "Ref": "RetryDurationSec"
+              }
+            }
+          },
+          "ErrorOutputPrefix": {
+            "Ref": "ErrorsPrefix"
+          },
+          "Prefix": {
+            "Ref": "DataPrefix"
+          },
+          "ProcessingConfiguration": {
+            "Enabled": true,
+            "Processors": [
+              {
+                "Parameters": [
+                  {
+                    "ParameterName": "MetadataExtractionQuery",
+                    "ParameterValue": {
+                      "Ref": "JqExpression"
+                    }
+                  },
+                  {
+                    "ParameterName": "JsonParsingEngine",
+                    "ParameterValue": "JQ-1.6"
+                  }
+                ],
+                "Type": "MetadataExtraction"
+              },
+              {
+                "Parameters": [
+                  {
+                    "ParameterName": "Delimiter",
+                    "ParameterValue": {
+                      "Fn::If": [
+                        "KdfNewLineDelimiter1D177307",
+                        "\\n",
+                        ""
+                      ]
+                    }
+                  }
+                ],
+                "Type": "AppendDelimiterToRecord"
+              }
+            ]
+          },
+          "RoleARN": {
+            "Fn::GetAtt": [
+              "KdfRole24613677",
+              "Arn"
+            ]
+          }
+        },
+        "KinesisStreamSourceConfiguration": {
+          "KinesisStreamARN": {
+            "Fn::GetAtt": [
+              "KdsDataStream4BCE778D",
+              "Arn"
+            ]
+          },
+          "RoleARN": {
+            "Fn::GetAtt": [
+              "KdfRole24613677",
+              "Arn"
+            ]
+          }
+        },
+		"VpcConfiguration": {
+			"SecurityGroupIds": [{"Fn::ImportValue" : {"Fn::Sub" : "${AWS::StackName}-DevSecurityGroup"}}],
+			"SubnetIds": [{"Fn::ImportValue" : {"Fn::Sub" : "${AWS::StackName}-Private-Subnet-01-VPC02"}}]
+		}
+      },
+      "Condition": "KdfDynamicPartitioningEnabledD334A2F5"
+    },
+	"KdaLogGroup3CE88219": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 365
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain"
+    },
+    "KdaLogStreamDE21D9F7": {
+      "Type": "AWS::Logs::LogStream",
+      "Properties": {
+        "LogGroupName": {
+          "Ref": "KdaLogGroup3CE88219"
+        }
+      },
+      "UpdateReplacePolicy": "Retain",
+      "DeletionPolicy": "Retain"
+    },
+	"KdaDatabase79F0DCD2": {
+      "Type": "AWS::Glue::Database",
+      "Properties": {
+        "CatalogId": {
+          "Ref": "AWS::AccountId"
+        },
+        "DatabaseInput": {
+          "Description": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " - Database for Amazon Kinesis Data Analytics Studio"
+              ]
+            ]
+          }
+        }
+      }
+    },
+	"KdaAppRole8C4B7E53": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "kinesisanalytics.amazonaws.com"
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": "logs:DescribeLogGroups",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":logs:",
+                        {
+                          "Ref": "AWS::Region"
+                        },
+                        ":",
+                        {
+                          "Ref": "AWS::AccountId"
+                        },
+                        ":log-group:*"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "Action": [
+                    "logs:DescribeLogStreams",
+                    "logs:PutLogEvents"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "KdaLogGroup3CE88219",
+                      "Arn"
+                    ]
+                  }
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "LogsPolicy"
+          },
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeVpcs",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:DescribeDhcpOptions",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeSecurityGroups"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+                },
+                {
+                  "Action": "ec2:CreateNetworkInterfacePermission",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:",
+                        {
+                          "Ref": "AWS::Partition"
+                        },
+                        ":ec2:",
+                        {
+                          "Ref": "AWS::Region"
+                        },
+                        ":",
+                        {
+                          "Ref": "AWS::AccountId"
+                        },
+                        ":network-interface/*"
+                      ]
+                    ]
+                  }
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "VpcPolicy"
+          },
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "glue:GetConnection",
+                    "glue:GetTable",
+                    "glue:GetTables",
+                    "glue:GetDatabase",
+                    "glue:CreateTable",
+                    "glue:UpdateTable",
+                    "glue:GetUserDefinedFunction"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": [
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":connection/*"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":table/",
+                          {
+                            "Ref": "KdaDatabase79F0DCD2"
+                          },
+                          "/*"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":database/",
+                          {
+                            "Ref": "KdaDatabase79F0DCD2"
+                          }
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":database/hive"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":catalog"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:",
+                          {
+                            "Ref": "AWS::Partition"
+                          },
+                          ":glue:",
+                          {
+                            "Ref": "AWS::Region"
+                          },
+                          ":",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":userDefinedFunction/*"
+                        ]
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "Action": "glue:GetDatabases",
+                  "Effect": "Allow",
+                  "Resource": "*"
+                }
+              ],
+              "Version": "2012-10-17"
+            },
+            "PolicyName": "GluePolicy"
+          }
+        ]
+      }
+    },
+	"KdaAppRoleDefaultPolicyD1F006B0": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "kinesis:DescribeStreamSummary",
+                "kinesis:GetRecords",
+                "kinesis:GetShardIterator",
+                "kinesis:ListShards",
+                "kinesis:SubscribeToShard"
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "KdsDataStream4BCE778D",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject*",
+                "s3:Abort*"
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "KdfOutputBucket89D2E122",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "KdfOutputBucket89D2E122",
+                          "Arn"
+                        ]
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "KdaAppRoleDefaultPolicyD1F006B0",
+        "Roles": [
+          {
+            "Ref": "KdaAppRole8C4B7E53"
+          }
+        ]
+      }
+    },
+	"KdaStudioB3B083CE": {
+      "Type": "AWS::KinesisAnalyticsV2::Application",
+      "Properties": {
+        "RuntimeEnvironment": "ZEPPELIN-FLINK-2_0",
+        "ServiceExecutionRole": {
+          "Fn::GetAtt": [
+            "KdaAppRole8C4B7E53",
+            "Arn"
+          ]
+        },
+        "ApplicationConfiguration": {
+          "ZeppelinApplicationConfiguration": {
+            "CatalogConfiguration": {
+              "GlueDataCatalogConfiguration": {
+                "DatabaseARN": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":glue:",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      ":",
+                      {
+                        "Ref": "AWS::AccountId"
+                      },
+                      ":database/",
+                      {
+                        "Ref": "KdaDatabase79F0DCD2"
+                      }
+                    ]
+                  ]
+                }
+              }
+            },
+            "CustomArtifactsConfiguration": [
+              {
+                "ArtifactType": "DEPENDENCY_JAR",
+                "MavenReference": {
+                  "ArtifactId": "flink-sql-connector-kinesis_2.12",
+                  "GroupId": "org.apache.flink",
+                  "Version": "1.13.2"
+                }
+              },
+              {
+                "ArtifactType": "DEPENDENCY_JAR",
+                "MavenReference": {
+                  "ArtifactId": "flink-connector-kafka_2.12",
+                  "GroupId": "org.apache.flink",
+                  "Version": "1.13.2"
+                }
+              },
+              {
+                "ArtifactType": "DEPENDENCY_JAR",
+                "MavenReference": {
+                  "ArtifactId": "aws-msk-iam-auth",
+                  "GroupId": "software.amazon.msk",
+                  "Version": "1.1.0"
+                }
+              }
+            ],
+            "MonitoringConfiguration": {
+              "LogLevel": {
+                "Ref": "LogLevel"
+              }
+            }
+          }
+        },
+        "ApplicationMode": "INTERACTIVE"
+      }
+    },
+    "KdaLoggingEAF1BAAE": {
+      "Type": "AWS::KinesisAnalyticsV2::ApplicationCloudWatchLoggingOption",
+      "Properties": {
+        "ApplicationName": {
+          "Ref": "KdaStudioB3B083CE"
+        },
+        "CloudWatchLoggingOption": {
+          "LogStreamARN": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition"
+                },
+                ":logs:",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ":",
+                {
+                  "Ref": "AWS::AccountId"
+                },
+                ":log-group:",
+                {
+                  "Ref": "KdaLogGroup3CE88219"
+                },
+                ":log-stream:",
+                {
+                  "Ref": "KdaLogStreamDE21D9F7"
+                }
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Conditions": {
+	  "KdfDynamicPartitioningEnabledD334A2F5": {
+      "Fn::Equals": [
+        {
+          "Ref": "DynamicPartitioning"
+        },
+        "Enabled"
+      ]
+    },
+	"KdfDynamicPartitioningDisabledA489FB59": {
+      "Fn::Equals": [
+        {
+          "Ref": "DynamicPartitioning"
+        },
+        "Disabled"
+      ]
+    },
+	"KdfNewLineDelimiter1D177307": {
+      "Fn::Equals": [
+        {
+          "Ref": "NewLineDelimiter"
+        },
+        "Enabled"
+      ]
+    }
+  },
+  "Outputs": {
+    "DataStreamName": {
+      "Description": "Name of the Amazon Kinesis Data stream",
+      "Value": {
+        "Ref": "KdsDataStream4BCE778D"
+      }
+    },
+    "StudioNotebookName": {
+      "Description": "Name of the Amazon Kinesis Data Analytics Studio notebook",
+      "Value": {
+        "Ref": "KdaStudioB3B083CE"
+      }
+    }
+  }
+}
