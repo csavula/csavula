@@ -1,0 +1,572 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "State: RDS Postgres, a cloudonaut.io template, sponsored by https://github.com/ngault",
+    "Metadata": {
+      "AWS::CloudFormation::Interface": {
+        "ParameterGroups": [
+          {
+            "Label": {
+              "default": "Parent Stacks"
+            },
+            "Parameters": [
+              "ParentVPCStack",
+              "ParentSGStack",
+              "ParentAlertStack"
+            ]
+          },
+          {
+            "Label": {
+              "default": "RDS Parameters"
+            },
+            "Parameters": [
+              "DBSnapshotIdentifier",
+              "EngineVersion",
+              "DBAllocatedStorage",
+              "DBInstanceClass",
+              "DBName",
+              "DBBackupRetentionPeriod",
+              "DBMasterUsername",
+              "DBMasterUserPassword",
+              "DBOptionGroupName",
+              "DBParameterGroupName",
+              "SubDomainNameWithDot",
+              "PreferredBackupWindow",
+              "PreferredMaintenanceWindow",
+              "EnableIAMDatabaseAuthentication"
+            ]
+          }
+        ]
+      }
+    },
+    "Parameters": {
+      "ParentVPCStack": {
+        "Description": "Stack name of parent VPC stack.",
+        "Type": "String"
+      },
+      "ParentSGStack": {
+        "Description": "Stack name of parent SecurityGroup stack.",
+        "Type": "String"
+      },
+      "ParentAlertStack": {
+        "Description": "Optional but recommended to receive notifications.",
+        "Type": "String",
+        "Default": ""
+      },
+      "DBSnapshotIdentifier": {
+        "Description": "Optional name or Amazon Resource Name (ARN) of the DB snapshot from which you want to restore (leave blank to create an empty database).",
+        "Type": "String",
+        "Default": ""
+      },
+      "DBAllocatedStorage": {
+        "Description": "The allocated storage size, specified in GB (ignored when DBSnapshotIdentifier is set, value used from snapshot).",
+        "Type": "Number",
+        "Default": 5,
+        "MinValue": 5,
+        "MaxValue": 16384
+      },
+      "DBInstanceClass": {
+        "Description": "The instance type of database server.",
+        "Type": "String",
+        "Default": "db.t2.micro"
+      },
+      "DBName": {
+        "Description": "Name of the database (ignored when DBSnapshotIdentifier is set, value used from snapshot).",
+        "Type": "String",
+        "Default": ""
+      },
+      "DBBackupRetentionPeriod": {
+        "Description": "The number of days to keep snapshots of the database.",
+        "Type": "Number",
+        "MinValue": 0,
+        "MaxValue": 35,
+        "Default": 30
+      },
+      "DBMasterUsername": {
+        "Description": "The master user name for the DB instance (ignored when DBSnapshotIdentifier is set, value used from snapshot).",
+        "Type": "String",
+        "Default": "master"
+      },
+      "DBMasterUserPassword": {
+        "Description": "The master user name for the DB instance (ignored when DBSnapshotIdentifier is set, value used from snapshot).",
+        "Type": "String",
+        "Default": ""
+      },
+      "DBOptionGroupName": {
+        "Description": "Optional name of an existing DB option group.",
+        "Type": "String",
+        "Default": ""
+      },
+      "DBParameterGroupName": {
+        "Description": "Optional name of an existing DB parameter group.",
+        "Type": "String",
+        "Default": ""
+      },
+      "PreferredBackupWindow": {
+        "Description": "The daily time range in UTC during which you want to create automated backups.",
+        "Type": "String",
+        "Default": "09:54-10:24"
+      },
+      "PreferredMaintenanceWindow": {
+        "Description": "The weekly time range (in UTC) during which system maintenance can occur.",
+        "Type": "String",
+        "Default": "sat:07:00-sat:07:30"
+      },
+      "EngineVersion": {
+        "Description": "PostgreSQL version.",
+        "Type": "String",
+        "Default": "9.6",
+        "AllowedValues": [
+          "9.6",
+          "9.5.4",
+          "9.5.6",
+          "9.5.7",
+          "9.5.9",
+          "9.5.10",
+          "9.5.12",
+          "9.5.13",
+          "9.5.14",
+          "9.5.15",
+          "9.5.16",
+          "9.5.18",
+          "9.5.19",
+          "9.5.20",
+          "9.5.21",
+          "9.5.22",
+          "9.5.23",
+          "9.6.1",
+          "9.6.2",
+          "9.6.3",
+          "9.6.5",
+          "9.6.6",
+          "9.6.8",
+          "9.6.9",
+          "9.6.10",
+          "9.6.11",
+          "9.6.12",
+          "9.6.14",
+          "9.6.15",
+          "9.6.16",
+          "9.6.17",
+          "9.6.18",
+          "9.6.19",
+          "10.1",
+          "10.3",
+          "10.4",
+          "10.5",
+          "10.6",
+          "10.7",
+          "10.9",
+          "10.10",
+          "10.11",
+          "10.12",
+          "10.13",
+          "10.14",
+          "11.1",
+          "11.2",
+          "11.4",
+          "11.5",
+          "11.6",
+          "11.7",
+          "11.8",
+          "11.9",
+          "12.2",
+          "12.3",
+          "12.4",
+          "13.2"
+        ]
+      },
+      "EnableIAMDatabaseAuthentication": {
+        "Description": "Enable mapping of AWS Identity and Access Management (IAM) accounts to database accounts (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.IAMDBAuth.html).",
+        "Type": "String",
+        "AllowedValues": [
+          "true",
+          "false"
+        ],
+        "Default": "false"
+      }
+    },
+    "Conditions": {
+      "HasAlertTopic": [
+        [
+          "ParentAlertStack",
+          ""
+        ]
+      ],
+      "HasDBSnapshotIdentifier": [
+        [
+          "DBSnapshotIdentifier",
+          ""
+        ]
+      ],
+      "HasDBOptionGroupName": [
+        [
+          "DBOptionGroupName",
+          ""
+        ]
+      ],
+      "HasDBParameterGroupName": [
+        [
+          "DBParameterGroupName",
+          ""
+        ]
+      ]
+    },
+    "Resources": {
+      "DatabaseSecurityGroup": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "AWS::StackName",
+          "VpcId": {
+            "Fn::ImportValue": "${ParentVPCStack}-Vpc02"
+          },
+          "SecurityGroupIngress": [
+            {
+              "IpProtocol": "tcp",
+              "FromPort": 5432,
+              "ToPort": 5432,
+              "SourceSecurityGroupId": {
+                "Fn::ImportValue": "${ParentSGStack}-DevSecurityGroup"
+              }
+            }
+          ]
+        }
+      },
+      "DBSubnetGroup": {
+        "Type": "AWS::RDS::DBSubnetGroup",
+        "Properties": {
+          "DBSubnetGroupDescription": "AWS::StackName",
+          "SubnetIds": [
+            {
+              "Fn::ImportValue": "${ParentVPCStack}-Private-Subnet-01-VPC02"
+            },
+            {
+              "Fn::ImportValue": "${ParentVPCStack}-Private-Subnet-02-VPC02"
+            }
+          ]
+        }
+      },
+      "DBInstance": {
+        "DeletionPolicy": "Snapshot",
+        "UpdateReplacePolicy": "Snapshot",
+        "Type": "AWS::RDS::DBInstance",
+        "Properties": {
+          "AllocatedStorage": [
+            "HasDBSnapshotIdentifier",
+            "AWS::NoValue",
+            "DBAllocatedStorage"
+          ],
+          "AllowMajorVersionUpgrade": false,
+          "AutoMinorVersionUpgrade": true,
+          "BackupRetentionPeriod": "DBBackupRetentionPeriod",
+          "CopyTagsToSnapshot": true,
+          "DBInstanceClass": "DBInstanceClass",
+          "DBName": [
+            "HasDBSnapshotIdentifier",
+            "AWS::NoValue",
+            "DBName"
+          ],
+          "DBParameterGroupName": [
+            "HasDBParameterGroupName",
+            "DBParameterGroupName",
+            "AWS::NoValue"
+          ],
+          "DBSnapshotIdentifier": [
+            "HasDBSnapshotIdentifier",
+            "DBSnapshotIdentifier",
+            "AWS::NoValue"
+          ],
+          "DBSubnetGroupName": "DBSubnetGroup",
+          "EnableIAMDatabaseAuthentication": "EnableIAMDatabaseAuthentication",
+          "Engine": "postgres",
+          "EngineVersion": [
+            "HasDBSnapshotIdentifier",
+            "AWS::NoValue",
+            "EngineVersion"
+          ],
+          "MasterUsername": [
+            "HasDBSnapshotIdentifier",
+            "AWS::NoValue",
+            "DBMasterUsername"
+          ],
+          "MasterUserPassword": "DBMasterUserPassword",
+          "OptionGroupName": [
+            "HasDBOptionGroupName",
+            "DBOptionGroupName",
+            "AWS::NoValue"
+          ],
+          "PreferredBackupWindow": "PreferredBackupWindow",
+          "PreferredMaintenanceWindow": "PreferredMaintenanceWindow",
+          "StorageType": "gp2",
+          "VPCSecurityGroups": [
+            "DatabaseSecurityGroup"
+          ]
+        }
+      },
+      "DatabaseBurstBalanceTooLowAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database storage burst balance over last 10 minutes too low, expect a significant performance drop soon.",
+          "ComparisonOperator": "LessThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "BurstBalance",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 20
+        }
+      },
+      "DatabaseCPUUtilizationTooHighAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database CPU utilization over last 10 minutes too high.",
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "CPUUtilization",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 80
+        }
+      },
+      "DatabaseCPUCreditBalanceTooLowAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database CPU credit balance over last 10 minutes too low, expect a significant performance drop soon.",
+          "ComparisonOperator": "LessThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "CPUCreditBalance",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 20
+        }
+      },
+      "DatabaseDiskQueueDepthTooHighAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database disk queue depth over last 10 minutes too high, performance may suffer.",
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "DiskQueueDepth",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 64
+        }
+      },
+      "DatabaseFreeableMemoryTooLowAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database freeable memory over last 10 minutes too low, performance may suffer.",
+          "ComparisonOperator": "LessThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "FreeableMemory",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 64000000
+        }
+      },
+      "DatabaseFreeStorageSpaceTooLowAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database free storage space over last 10 minutes too low.",
+          "ComparisonOperator": "LessThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "FreeStorageSpace",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 2000000000
+        }
+      },
+      "DatabaseSwapUsageTooHighAlarm": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "AlarmDescription": "Average database swap usage over last 10 minutes too high, performance may suffer.",
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Dimensions": [
+            {
+              "Name": "DBInstanceIdentifier",
+              "Value": "DBInstance"
+            }
+          ],
+          "EvaluationPeriods": 1,
+          "MetricName": "SwapUsage",
+          "Namespace": "AWS/RDS",
+          "OKActions": [
+            {
+              "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+            }
+          ],
+          "Period": 600,
+          "Statistic": "Average",
+          "Threshold": 256000000
+        }
+      },
+      "DatabaseEventSubscription": {
+        "Condition": "HasAlertTopic",
+        "Type": "AWS::RDS::EventSubscription",
+        "Properties": {
+          "EventCategories": [
+            "failover",
+            "failure",
+            "low storage",
+            "maintenance",
+            "read replica",
+            "recovery"
+          ],
+          "SnsTopicArn": {
+            "Fn::ImportValue": "${ParentAlertStack}-TopicARN"
+          },
+          "SourceIds": [
+            "DBInstance"
+          ],
+          "SourceType": "db-instance"
+        }
+      }
+    },
+    "Outputs": {
+      "TemplateID": {
+        "Description": "cloudonaut.io template id.",
+        "Value": "state/rds-postgres"
+      },
+      "TemplateVersion": {
+        "Description": "cloudonaut.io template version.",
+        "Value": "__VERSION__"
+      },
+      "StackName": {
+        "Description": "Stack name.",
+        "Value": "${AWS::StackName}"
+      },
+      "InstanceName": {
+        "Description": "The name of the database instance.",
+        "Value": "DBInstance",
+        "Export": {
+          "Name": "${AWS::StackName}-InstanceName"
+        }
+      },
+      "DNSName": {
+        "Description": "The connection endpoint for the database.",
+        "Value": "DBInstance.Endpoint.Address",
+        "Export": {
+          "Name": "${AWS::StackName}-DNSName"
+        }
+      },
+      "SecurityGroupId": {
+        "Description": "The security group used to manage access to RDS Postgres.",
+        "Value": "DatabaseSecurityGroup",
+        "Export": {
+          "Name": "${AWS::StackName}-SecurityGroupId"
+        }
+      }
+    }
+  }

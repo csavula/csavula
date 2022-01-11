@@ -1,0 +1,706 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS VPC infrastructure for Twitch application. Version v1.0",
+	"Metadata": {
+		"AWS::CloudFormation::Interface": {
+		  "ParameterGroups": [
+			{
+			  "Label": {
+				"default": "AWS VPC infrastructure for Twitch application."
+			  },
+			  "Parameters": [
+				"VpcBlock01",
+				"VpcBlock02",
+				"PubSubnetVPC01",
+				"PubSubnetVPC02",
+				"PriSubnet01VPC02",
+				"PriSubnet02VPC02"
+			  ]
+			}
+		  ],
+		  "ParameterLabels": {
+			"VpcBlock01": {
+			  "default": "CidrBlock for VPC-01"
+			},
+			"VpcBlock02": {
+			  "default": "CidrBlock for VPC-02"
+			},
+			"PubSubnetVPC01": {
+			  "default": "CidrBlock for Public Subnet within the VPC-01."
+			},
+			"PubSubnetVPC02": {
+			  "default": "CidrBlock for Public Subnet within the VPC-02."
+			},
+			"PriSubnet01VPC02": {
+			  "default": "CidrBlock for Private Subnet 01 within the VPC-02."
+			},
+			"PriSubnet02VPC02": {
+			  "default": "CidrBlock for Private Subnet 02 within the VPC-02."
+			}
+		  }
+		}
+	},
+    "Parameters": {
+        "VpcBlock01": {
+            "Type": "String",
+            "Default": "10.0.0.0/26",
+			"MaxLength": 20,
+			"MinLength": 0
+        },
+        "VpcBlock02": {
+            "Type": "String",
+            "Default": "10.1.0.0/26",
+            "MaxLength": 20,
+			"MinLength": 0
+        },
+        "PubSubnetVPC01": {
+            "Type": "String",
+            "Default": "10.0.0.0/28",
+            "MaxLength": 20,
+			"MinLength": 0
+        },
+        "PubSubnetVPC02": {
+            "Type": "String",
+            "Default": "10.1.0.0/28",
+            "MaxLength": 20,
+			"MinLength": 0
+        },
+        "PriSubnet01VPC02": {
+            "Type": "String",
+            "Default": "10.1.0.16/28",
+            "MaxLength": 20,
+			"MinLength": 0
+        },
+        "PriSubnet02VPC02": {
+            "Type": "String",
+            "Default": "10.1.0.32/28",
+            "MaxLength": 20,
+			"MinLength": 0
+        }
+    },
+    "Resources": {
+		"LambdaIAMRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/service-role/",
+                "Policies": [
+                    {
+                        "PolicyName": "AWSLambdaExecutionRole",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:Describe*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:*:*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "GetMainRouteTable": {
+            "Type": "AWS::Lambda::Function",
+			"DependsOn": "LambdaIAMRole",
+            "Properties": {
+                "Description": "Lambda function to get main Route Table based on selected VPC",
+                "Handler": "index.handler",
+                "Runtime": "nodejs14.x",
+                "FunctionName": "GetMainRouteTable-Func",
+                "Timeout": "15",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaIAMRole",
+                        "Arn"
+                    ]
+                },
+                "MemorySize": 128,
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "const AWS = require('aws-sdk');\n",
+                                "var response = require('cfn-response');\n",
+                                "exports.handler = async (event, context) => {\n",
+                                "   if(event.RequestType == \"Delete\"){\n",
+                                "        return await response.send(event, context, \"SUCCESS\");\n",
+                                "    }\n",
+                                "    try {",
+                                "        console.log(\"RECEIVED EVENT:\\n\", JSON.stringify(event, null, 2));\n",
+                                "       return await handleGetMainRTEvent(event, context, event.ResourceProperties.region, event.ResourceProperties.VPCId);\n",
+                                "    } catch (e) {\n",
+                                "        throw e;\n",
+                                "    }\n",
+                                "};\n",
+                                "async function handleGetMainRTEvent(event, context, region, VPCId) {\n",
+                                "    var responseStatus = \"FAILED\";\n",
+                                "    const responseData = {};\n",
+                                "    try {\n",
+                                "        const ec2 = new AWS.EC2({region});\n",
+                                "        if (VPCId) {\n",
+                                "            const RouteTableId = await getRouteTableId(ec2, VPCId);\n",
+                                "            if(RouteTableId && RouteTableId.length !== 0){\n",
+                                "                responseData['RouteTableId'] = RouteTableId;\n",
+                                "                responseStatus = \"SUCCESS\";\n",
+                                "            }else{\n",
+                                "                responseData['Error-Msg']=\"NO main Route Table attached to the selected VPC!!!\";\n",
+                                "            }\n",
+                                "        }\n",
+                                "    } catch (e) {\n",
+                                "        throw e;\n",
+                                "    }\n",
+                                "    return await response.send(event,context,responseStatus,responseData);\n",
+                                "}\n",
+                                "async function getRouteTableId(ec2, VPCId) {\n",
+                                "    try {\n",
+                                "        const filters = [\n",
+                                "\t\t\t      {Name: \"association.main\", Values: ['true']},\n",
+                                "            {Name: \"vpc-id\", Values: [VPCId]}\n",
+                                "\t\t\t  ];\n",
+                                "        const RouteTableId = await ec2.describeRouteTables({Filters: filters}).promise();\n",
+                                "        return RouteTableId.RouteTables[0].RouteTableId;\n",
+                                "    } catch (e) {\n",
+                                "        throw e;\n",
+                                "    }\n",
+                                "}"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "Vpc01Resource278265": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VpcBlock01"
+                },
+                "EnableDnsHostnames": true,
+                "EnableDnsSupport": true,
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Vpc01"
+                        }
+                    }
+                ]
+            }
+        },
+        "Vpc02Resource699784": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VpcBlock02"
+                },
+                "EnableDnsHostnames": true,
+                "EnableDnsSupport": true,
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Vpc02"
+                        }
+                    }
+                ]
+            }
+        },
+        "GetMainRouteTableTriger01": {
+            "Type": "Custom::getMainRouteTableIdTrigger",
+			"DependsOn": "GetMainRouteTable",
+            "Version": "1.0",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:aws:lambda:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":function:GetMainRouteTable-Func"
+                        ]
+                    ]
+                },
+                "region": {
+                    "Ref": "AWS::Region"
+                },
+                "VPCId": {
+                    "Ref": "Vpc01Resource278265"
+                }
+            }
+        },
+        "GetMainRouteTableTriger02": {
+            "Type": "Custom::getMainRouteTableIdTrigger",
+			"DependsOn": "GetMainRouteTable",
+            "Version": "1.0",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:aws:lambda:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":function:GetMainRouteTable-Func"
+                        ]
+                    ]
+                },
+                "region": {
+                    "Ref": "AWS::Region"
+                },
+                "VPCId": {
+                    "Ref": "Vpc02Resource699784"
+                }
+            }
+        },
+		"PubSubnetVPC012782": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc01Resource278265"
+                },
+                "CidrBlock": {
+                    "Ref": "PubSubnetVPC01"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Public-Subnet-VPC01"
+                        }
+                    }
+                ],
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Fn::GetAZs": {
+                                "Ref": "AWS::Region"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"PubSubnetRouteTableAssociationVPC012782": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PubSubnetVPC012782"
+                },
+                "RouteTableId": {
+					"Fn::GetAtt": [
+									"GetMainRouteTableTriger01",
+									"RouteTableId"
+					]
+				}
+            }
+        },
+        "InternetGatewayVPC012782": {
+            "Type": "AWS::EC2::InternetGateway"
+        },
+        "VPCGatewayAttachmentVPC012782": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "InternetGatewayId": {
+                    "Ref": "InternetGatewayVPC012782"
+                },
+                "VpcId": {
+                    "Ref": "Vpc01Resource278265"
+                }
+            }
+        },
+        "RouteVPC012782": {
+            "DependsOn": "VPCGatewayAttachmentVPC012782",
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+					"Fn::GetAtt": [
+									"GetMainRouteTableTriger01",
+									"RouteTableId"
+					]
+				},
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGatewayVPC012782"
+                }
+            }
+        },
+		"PubSubnetVPC026569": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                },
+                "CidrBlock": {
+                    "Ref": "PubSubnetVPC02"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Public-Subnet-VPC02"
+                        }
+                    }
+                ],
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Fn::GetAZs": {
+                                "Ref": "AWS::Region"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"PriSubnet01VPC029784": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                },
+                "CidrBlock": {
+                    "Ref": "PriSubnet01VPC02"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Private-Subnet-01-VPC02"
+                        }
+                    }
+                ],
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Fn::GetAZs": {
+                                "Ref": "AWS::Region"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"PriSubnet02VPC029784": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                },
+                "CidrBlock": {
+                    "Ref": "PriSubnet02VPC02"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-Private-Subnet-02-VPC02"
+                        }
+                    }
+                ],
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Fn::GetAZs": {
+                                "Ref": "AWS::Region"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+		"PriRouteTable01VPC029784": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Private Subnets"
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            }
+        },
+		"PriRouteTable02VPC029784": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Private Subnets"
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            }
+        },
+        "PubSubnetRouteTableAssociationVPC026569": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PubSubnetVPC026569"
+                },
+                "RouteTableId": {
+					"Fn::GetAtt": [
+									"GetMainRouteTableTriger02",
+									"RouteTableId"
+					]
+				}
+            }
+        },
+		"PriSubnet01RouteTableAssociationVPC029784": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PriSubnet01VPC029784"
+                },
+                "RouteTableId": {
+                    "Ref": "PriRouteTable01VPC029784"
+                }
+            }
+        },
+		"PriSubnet02RouteTableAssociationVPC029784": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PriSubnet02VPC029784"
+                },
+                "RouteTableId": {
+                    "Ref": "PriRouteTable02VPC029784"
+                }
+            }
+        },
+        "InternetGatewayVPC026569": {
+            "Type": "AWS::EC2::InternetGateway"
+        },
+        "VPCGatewayAttachmentVPC026569": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "InternetGatewayId": {
+                    "Ref": "InternetGatewayVPC026569"
+                },
+                "VpcId": {
+                    "Ref": "Vpc02Resource699784"
+                }
+            }
+        },
+        "RouteVPC026569": {
+            "DependsOn": "VPCGatewayAttachmentVPC026569",
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+					"Fn::GetAtt": [
+									"GetMainRouteTableTriger02",
+									"RouteTableId"
+					]
+				},
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGatewayVPC026569"
+                }
+            }
+        },
+		"NAT01VPC029784" : {
+		    "Type" : "AWS::EC2::NatGateway",
+		    "Properties" : {
+			    "AllocationId" : { "Fn::GetAtt" : ["EIP01VPC029784", "AllocationId"]},
+			    "SubnetId" : { "Ref" : "PubSubnetVPC026569"},
+			    "Tags" : [ {"Key" : "Name", "Value" : "NAT-GATEWAY-01-VPC029784" } ]
+			}
+		},
+		"NAT02VPC029784" : {
+		    "Type" : "AWS::EC2::NatGateway",
+		    "Properties" : {
+			    "AllocationId" : { "Fn::GetAtt" : ["EIP02VPC029784", "AllocationId"]},
+			    "SubnetId" : { "Ref" : "PubSubnetVPC026569"},
+			    "Tags" : [ {"Key" : "Name", "Value" : "NAT-GATEWAY-02-VPC029784" } ]
+			}
+		},
+		"EIP01VPC029784" : {
+		    "Type" : "AWS::EC2::EIP",
+		    "Properties" : {
+			    "Domain" : "vpc"
+		   }
+		},
+		"EIP02VPC029784" : {
+		    "Type" : "AWS::EC2::EIP",
+		    "Properties" : {
+			    "Domain" : "vpc"
+		   }
+		},
+		"PriRoute01VPC029784" : {
+			"Type" : "AWS::EC2::Route",
+			"Properties" : {
+				"RouteTableId" : { "Ref" : "PriRouteTable01VPC029784" },
+				"DestinationCidrBlock" : "0.0.0.0/0",
+				"NatGatewayId" : { "Ref" : "NAT01VPC029784" }
+			}
+	   },
+	   "PriRoute02VPC029784" : {
+			"Type" : "AWS::EC2::Route",
+			"Properties" : {
+				"RouteTableId" : { "Ref" : "PriRouteTable02VPC029784" },
+				"DestinationCidrBlock" : "0.0.0.0/0",
+				"NatGatewayId" : { "Ref" : "NAT02VPC029784" }
+			}
+	   }
+    },
+    "Outputs": {
+		"LambdaIAMRole": {
+            "Description": "IAM role to trigger lambda function.",
+            "Value": {
+                    "Fn::GetAtt": [
+                        "LambdaIAMRole",
+                        "Arn"
+                    ]
+            }
+        },
+		"GetMainRouteTable": {
+            "Description": "Route Table Id.",
+            "Value": {
+                "Fn::GetAtt": [
+                                "GetMainRouteTable",
+                                "Arn"
+                            ]
+            }
+        },
+        "Vpc01Resource278265": {
+            "Description": "VPC-01 Id.",
+            "Value": {
+                "Ref": "Vpc01Resource278265"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Vpc01" 
+						}
+			}
+        },
+        "Vpc02Resource699784": {
+            "Description": "VPC-02 Id.",
+            "Value": {
+                "Ref": "Vpc02Resource699784"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Vpc02" 
+						}
+			}
+        },
+		"PubSubnetVPC012782": {
+            "Description": "Public Subnet Id of VPC-01",
+            "Value": {
+                "Ref": "PubSubnetVPC012782"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Public-Subnet-VPC01" 
+						}
+			}
+        },
+		"PubSubnetVPC026569": {
+            "Description": "Public Subnet Id of VPC-02",
+            "Value": {
+                "Ref": "PubSubnetVPC026569"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Public-Subnet-VPC02" 
+						}
+			}
+        },
+		"PriSubnet01VPC029784": {
+            "Description": "Private Subnet Id of VPC-02",
+            "Value": {
+                "Ref": "PriSubnet01VPC029784"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Private-Subnet-01-VPC02" 
+				}
+			}
+        },
+		"PriSubnet02VPC029784": {
+            "Description": "Private Subnet Id of VPC-02",
+            "Value": {
+                "Ref": "PriSubnet02VPC029784"
+            },
+			"Export" : { 
+				"Name" : {
+						"Fn::Sub": "${AWS::StackName}-Private-Subnet-02-VPC02" 
+				}
+			}
+        },
+        "VPC01MainRouteTableId": {
+            "Description": "Vpc01Resource278265 main Route Table Id.",
+            "Value": {
+                "Fn::GetAtt": [
+                                "GetMainRouteTableTriger01",
+                                "RouteTableId"
+                ]
+            }
+        },
+		"VPC02MainRouteTableId": {
+            "Description": "Vpc02Resource699784 main Route Table Id.",
+            "Value": {
+                "Fn::GetAtt": [
+                                "GetMainRouteTableTriger02",
+                                "RouteTableId"
+                ]
+            }
+        }
+    }
+}

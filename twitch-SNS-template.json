@@ -1,0 +1,257 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This CFT will be used to create SNS for alert through email, Http or Https Endpoint",
+    "Metadata": {
+      "AWS::CloudFormation::Interface": {
+        "ParameterGroups": [
+          {
+            "Label": {
+              "default": "Alert Parameters"
+            },
+            "Parameters": [
+              "Email",
+              "HttpEndpoint",
+              "HttpsEndpoint"
+            ]
+          },
+          {
+            "Label": {
+              "default": "Fallback Parameters"
+            },
+            "Parameters": [
+              "FallbackEmail"
+            ]
+          }
+        ]
+      }
+    },
+    "Parameters": {
+      "Email": {
+        "Description": "Optional email address that will receive alerts.",
+        "Type": "String",
+        "Default": "manjunatha.k@tavant.com"
+      },
+      "HttpEndpoint": {
+        "Description": "Optional HTTP endpoint that will receive alerts via POST requests.",
+        "Type": "String",
+        "Default": ""
+      },
+      "HttpsEndpoint": {
+        "Description": "Optional HTTPS endpoint that will receive alerts via POST requests",
+        "Type": "String",
+        "Default": ""
+      },
+      "FallbackEmail": {
+        "Description": "Optional email address that will receive alerts if alerts can not be delivered.",
+        "Type": "String",
+        "Default": ""
+      }
+    },
+    "Conditions": {
+      "HasEmail": [
+        [
+          "Email",
+          ""
+        ]
+      ],
+      "HasHttpEndpoint": [
+        [
+          "HttpEndpoint",
+          ""
+        ]
+      ],
+      "HasHttpsEndpoint": [
+        [
+          "HttpsEndpoint",
+          ""
+        ]
+      ],
+      "HasFallbackEmail": [
+        [
+          "FallbackEmail",
+          ""
+        ]
+      ]
+    },
+    "Resources": {
+      "Topic": {
+        "Type": "AWS::SNS::Topic",
+        "Properties": {
+        }
+      },
+      "TopicPolicy": {
+        "Type": "AWS::SNS::TopicPolicy",
+        "Properties": {
+          "PolicyDocument": {
+            "Id": "Id1",
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "Sid1",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": [
+                    "events.amazonaws.com",
+                    "budgets.amazonaws.com",
+                    "rds.amazonaws.com",
+                    "s3.amazonaws.com",
+                    "backup.amazonaws.com",
+                    "codestar-notifications.amazonaws.com"
+                  ]
+                },
+                "Action": "sns:Publish",
+                "Resource": "Topic"
+              },
+              {
+                "Sid": "Sid2",
+                "Effect": "Allow",
+                "Principal": {
+                  "AWS": "*"
+                },
+                "Action": "sns:Publish",
+                "Resource": "Topic",
+                "Condition": {
+                  "StringEquals": {
+                    "AWS:SourceOwner": "AWS::AccountId"
+                  }
+                }
+              },
+              {
+                "Sid": "Sid3",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "ses.amazonaws.com"
+                },
+                "Action": "sns:Publish",
+                "Resource": "Topic",
+                "Condition": {
+                  "StringEquals": {
+                    "AWS:Referer": "AWS::AccountId"
+                  }
+                }
+              }
+            ]
+          },
+          "Topics": [
+            "Topic"
+          ]
+        }
+      },
+      "FallbackTopic": {
+        "Type": "AWS::SNS::Topic",
+        "Properties": {
+        }
+      },
+      "NumberOfNotificationsFailedTooHighAlarm": {
+        "Type": "AWS::CloudWatch::Alarm",
+        "Properties": {
+          "AlarmDescription": "Alerts could not be delivered",
+          "Namespace": "AWS/SNS",
+          "MetricName": "NumberOfNotificationsFailed",
+          "Statistic": "Sum",
+          "Period": 60,
+          "EvaluationPeriods": 1,
+          "ComparisonOperator": "GreaterThanThreshold",
+          "Threshold": 0,
+          "AlarmActions": [
+            "FallbackTopic"
+          ],
+          "Dimensions": [
+            {
+              "Name": "TopicName",
+              "Value": "Topic.TopicName"
+            }
+          ],
+          "TreatMissingData": "notBreaching"
+        }
+      },
+      "EmailSubscription": {
+        "Condition": "HasEmail",
+        "Type": "AWS::SNS::Subscription",
+        "Properties": {
+          "Endpoint": "Email",
+          "Protocol": "email",
+          "TopicArn": "Topic"
+        }
+      },
+      "HttpEndpointSubscription": {
+        "Condition": "HasHttpEndpoint",
+        "Type": "AWS::SNS::Subscription",
+        "Properties": {
+          "DeliveryPolicy": {
+            "healthyRetryPolicy": {
+              "minDelayTarget": 1,
+              "maxDelayTarget": 60,
+              "numRetries": 100,
+              "numNoDelayRetries": 0,
+              "backoffFunction": "exponential"
+            },
+            "throttlePolicy": {
+              "maxReceivesPerSecond": 1
+            }
+          },
+          "Endpoint": "HttpEndpoint",
+          "Protocol": "http",
+          "TopicArn": "Topic"
+        }
+      },
+      "HttpsEndpointSubscription": {
+        "Condition": "HasHttpsEndpoint",
+        "Type": "AWS::SNS::Subscription",
+        "Properties": {
+          "DeliveryPolicy": {
+            "healthyRetryPolicy": {
+              "minDelayTarget": 1,
+              "maxDelayTarget": 60,
+              "numRetries": 100,
+              "numNoDelayRetries": 0,
+              "backoffFunction": "exponential"
+            },
+            "throttlePolicy": {
+              "maxReceivesPerSecond": 1
+            }
+          },
+          "Endpoint": "HttpsEndpoint",
+          "Protocol": "https",
+          "TopicArn": "Topic"
+        }
+      },
+      "FallbackEmailSubscription": {
+        "Condition": "HasFallbackEmail",
+        "Type": "AWS::SNS::Subscription",
+        "Properties": {
+          "Endpoint": "FallbackEmail",
+          "Protocol": "email",
+          "TopicArn": "FallbackTopic"
+        }
+      }
+    },
+    "Outputs": {
+      "TemplateID": {
+        "Description": "cloudonaut.io template id.",
+        "Value": "operations/alert"
+      },
+      "TemplateVersion": {
+        "Description": "cloudonaut.io template version.",
+        "Value": "__VERSION__"
+      },
+      "StackName": {
+        "Description": "Stack name.",
+        "Value": "${AWS::StackName}"
+      },
+      "TopicARN": {
+        "Description": "The ARN of the alert topic.",
+        "Value": "Topic",
+        "Export": {
+          "Name": "${AWS::StackName}-TopicARN"
+        }
+      },
+      "TopicName": {
+        "Description": "The name of the alert topic.",
+        "Value": "Topic.TopicName",
+        "Export": {
+          "Name": "${AWS::StackName}-TopicName"
+        }
+      }
+    }
+  }
